@@ -163,7 +163,7 @@ Services will be available at:
 | Copilot Service | http://localhost:8083/swagger-ui.html |
 | Kafka UI | http://localhost:9090 |
 | Prometheus | http://localhost:9091 |
-| Grafana | http://localhost:3000 (admin/admin) |
+| Grafana | http://localhost:3000 |
 
 ### 3. Trigger a full AI triage
 
