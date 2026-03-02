@@ -1,0 +1,41 @@
+spring:
+  ai:
+    openai:
+      api-key: test-key-not-used   # Mocked in tests via @MockBean
+      chat:
+        options:
+          model: gpt-4o
+          temperature: 0.2
+
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers:localhost:9092}
+    consumer:
+      group-id: copilot-test
+      auto-offset-reset: earliest
+    producer:
+      key-serializer:   org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  datasource:
+    url: jdbc:h2:mem:copilottest;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+
+services:
+  incident-service:
+    base-url: http://localhost:8081  # Mocked by WireMock in integration tests
+
+logging:
+  level:
+    com.company.copilot: DEBUG

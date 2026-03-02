@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'incident-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['incident-service:8081']
+        labels:
+          service: 'incident-service'
+
+  - job_name: 'log-aggregator'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['log-aggregator:8082']
+        labels:
+          service: 'log-aggregator'
+
+  - job_name: 'copilot-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['copilot-service:8083']
+        labels:
+          service: 'copilot-service'
+
+  - job_name: 'api-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['api-gateway:8080']
+        labels:
+          service: 'api-gateway'

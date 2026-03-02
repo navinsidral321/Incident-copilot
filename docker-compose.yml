@@ -1,0 +1,194 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  AI-Powered Production Incident Copilot — Local Development Stack
+# ─────────────────────────────────────────────────────────────────────────────
+#  Start: docker-compose up -d
+#  Stop:  docker-compose down
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: incident-postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_MULTIPLE_DATABASES: incidents,copilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: incident-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: incident-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: incident-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: incident-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "9090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  # ── Application Services ────────────────────────────────────────────────────
+
+  incident-service:
+    build:
+      context: .
+      dockerfile: incident-service/Dockerfile
+    container_name: incident-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/incidents
+      DB_USER: admin
+      DB_PASS: admin
+      KAFKA_BROKERS: kafka:29092
+      SERVER_PORT: 8081
+    ports:
+      - "8081:8081"
+
+  log-aggregator:
+    build:
+      context: .
+      dockerfile: log-aggregator/Dockerfile
+    container_name: log-aggregator
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      REDIS_HOST: redis
+      SERVER_PORT: 8082
+    ports:
+      - "8082:8082"
+
+  copilot-service:
+    build:
+      context: .
+      dockerfile: copilot-service/Dockerfile
+    container_name: copilot-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DB_URL: jdbc:postgresql://postgres:5432/copilot
+      DB_USER: admin
+      DB_PASS: admin
+      KAFKA_BROKERS: kafka:29092
+      REDIS_HOST: redis
+      INCIDENT_SERVICE_URL: http://incident-service:8081
+      SERVER_PORT: 8083
+    ports:
+      - "8083:8083"
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    depends_on:
+      - incident-service
+      - copilot-service
+      - log-aggregator
+    environment:
+      INCIDENT_SERVICE_URL: http://incident-service:8081
+      COPILOT_SERVICE_URL: http://copilot-service:8083
+      LOG_AGGREGATOR_URL: http://log-aggregator:8082
+      REDIS_HOST: redis
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+
+  # ── Observability ────────────────────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: incident-prometheus
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9091:9090"
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: incident-grafana
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources
+
+volumes:
+  postgres_data:
+  redis_data:
+  grafana_data:
