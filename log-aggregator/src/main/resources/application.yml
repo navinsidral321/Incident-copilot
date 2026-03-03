@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: log-aggregator
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    consumer:
+      group-id: log-aggregatorserv
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.company.common.events"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 20
+
+server:
+  port: ${SERVER_PORT:8082}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Resilience4j config for calling external log sources
+resilience4j:
+  circuitbreaker:
+    instances:
+      logSource:
+        register-health-indicator: true
+        sliding-window-size: 10
+        permitted-number-of-calls-in-half-open-state: 3
+        sliding-window-type: COUNT_BASED
+        minimum-number-of-calls: 5
+        wait-duration-in-open-state: 30s
+        failure-rate-threshold: 50
+  retry:
+    instances:
+      logSource:
+        max-attempts: 3
+        wait-duration: 1s
+
+# Log source endpoints (Loki, Elasticsearch, OpenSearch)
+log-sources:
+  loki:
+    base-url: ${LOKI_URL:http://localhost:3100}
+    enabled: ${LOKI_ENABLED:false}
+  elasticsearch:
+    base-url: ${ES_URL:http://localhost:9200}
+    index-pattern: ${ES_INDEX:logs-*}
+    enabled: ${ES_ENABLED:false}
+
+logging:
+  level:
+    com.company.logagg: INFO

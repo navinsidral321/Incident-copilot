@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+            allowedHeaders: "*"
+
+      default-filters:
+        - AddResponseHeader=X-Powered-By, IncidentCopilot
+        - RequestRateLimiter=#{@redisRateLimiter}
+
+      routes:
+        # Incident Service
+        - id: incident-service
+          uri: ${INCIDENT_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/incidents/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: incident-service
+                fallbackUri: forward:/fallback/incident-service
+            - name: Retry
+              args:
+                retries: 2
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+
+        # Copilot Service
+        - id: copilot-service
+          uri: ${COPILOT_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/copilot/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: copilot-service
+                fallbackUri: forward:/fallback/copilot-service
+
+        # Log Aggregator
+        - id: log-aggregator
+          uri: ${LOG_AGGREGATOR_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/logs/**
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      incident-service:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+      copilot-service:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO

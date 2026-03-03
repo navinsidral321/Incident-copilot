@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: copilot-service
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:your-openai-key}
+      chat:
+        options:
+          model: gpt-4o
+          temperature: 0.2       # Low temp for precise incident analysis
+          max-tokens: 4096
+
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536          # text-embedding-ada-002 / text-embedding-3-small
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    consumer:
+      group-id: copilot-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.company.common.events"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/copilot}
+    username: ${DB_USER:copilot_user}
+    password: ${DB_PASS:copilot_pass}
+
+server:
+  port: ${SERVER_PORT:8083}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Internal service URLs
+services:
+  incident-service:
+    base-url: ${INCIDENT_SERVICE_URL:http://localhost:8081}
+
+# Copilot behaviour tunables
+copilot:
+  log-window-minutes: 30         # How far back to pull logs on incident creation
+  max-log-entries-per-service: 200
+  rag:
+    top-k: 5                     # How many similar past incidents to retrieve
+    similarity-threshold: 0.75
+
+logging:
+  level:
+    com.company.copilot: DEBUG
+    org.springframework.ai: INFO
